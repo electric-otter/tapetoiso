@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ISO to Tape Hex Translator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    h1 { color: #28527a; }
+    label { font-weight: bold; }
+    #output { white-space: pre; font-family: monospace; background: #f9f9f9; border: 1px solid #ccc; padding: 10px; margin-top: 20px; }
+    .hidden { display: none; }
+    .hex-table { font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>ISO to Tape Hex Translator</h1>
+  <label for="isoFile">Import ISO file:</label>
+  <input type="file" id="isoFile" accept=".iso"><br><br>
+  <label for="hexMap">Hex Changes (one per line, ISO=XX Tape=YY):</label><br>
+  <textarea id="hexMap" rows="6" cols="40" placeholder="Example:\n20=00\n41=01"></textarea><br><br>
+  <button id="translateBtn">Translate to Tape Format</button>
+  <a id="downloadLink" class="hidden" download="tape.bin">Download Tape File</a>
+  <div id="output"></div>
+  <script>
+    // Parse mapping string like "20=00\n41=01" into an object {0x20:0x00, 0x41:0x01}
+    function parseHexMap(mapStr) {
+      const map = {};
+      mapStr.split('\n').forEach(line => {
+        line = line.trim();
+        if (!line || !line.includes('=')) return;
+        const [iso, tape] = line.split('=').map(x => x.trim());
+        if (/^[0-9a-fA-F]{2}$/.test(iso) && /^[0-9a-fA-F]{2}$/.test(tape)) {
+          map[parseInt(iso, 16)] = parseInt(tape, 16);
+        }
+      });
+      return map;
+    }
+
+    document.getElementById('translateBtn').onclick = function () {
+      const fileInput = document.getElementById('isoFile');
+      const hexMapStr = document.getElementById('hexMap').value;
+      const hexMap = parseHexMap(hexMapStr);
+      const outputDiv = document.getElementById('output');
+      outputDiv.textContent = '';
+      document.getElementById('downloadLink').classList.add('hidden');
+
+      if (!fileInput.files.length) {
+        outputDiv.textContent = 'Please select an ISO file.';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const isoBuffer = new Uint8Array(e.target.result);
+        const tapeBuffer = new Uint8Array(isoBuffer.length);
+
+        for (let i = 0; i < isoBuffer.length; i++) {
+          let val = isoBuffer[i];
+          if (hexMap.hasOwnProperty(val)) {
+            tapeBuffer[i] = hexMap[val];
+          } else {
+            tapeBuffer[i] = val; // If not mapped, keep original byte
+          }
+        }
+
+        // Show a short hex preview
+        let preview = 'First 64 bytes of translated tape file:\n';
+        preview += Array.from(tapeBuffer.slice(0, 64)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        outputDiv.textContent = preview;
+
+        // Offer download
+        const blob = new Blob([tapeBuffer], {type: 'application/octet-stream'});
+        const dl = document.getElementById('downloadLink');
+        dl.href = URL.createObjectURL(blob);
+        dl.classList.remove('hidden');
+        dl.textContent = 'Download Tape File';
+      };
+      reader.readAsArrayBuffer(fileInput.files[0]);
+    };
+  </script>
+</body>
+</html>
