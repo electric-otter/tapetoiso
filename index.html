@@ -21,62 +21,71 @@
   <button id="translateBtn">Translate to Tape Format</button>
   <a id="downloadLink" class="hidden" download="tape.bin">Download Tape File</a>
   <div id="output"></div>
-  <script>
-    // Parse mapping string like "20=00\n41=01" into an object {0x20:0x00, 0x41:0x01}
-    function parseHexMap(mapStr) {
-      const map = {};
-      mapStr.split('\n').forEach(line => {
-        line = line.trim();
-        if (!line || !line.includes('=')) return;
-        const [iso, tape] = line.split('=').map(x => x.trim());
-        if (/^[0-9a-fA-F]{2}$/.test(iso) && /^[0-9a-fA-F]{2}$/.test(tape)) {
-          map[parseInt(iso, 16)] = parseInt(tape, 16);
-        }
-      });
-      return map;
+<script>
+  function parseHexMap(mapStr) {
+    const map = {};
+    mapStr.split('\n').forEach(line => {
+      line = line.trim();
+      if (!line || !line.includes('=')) return;
+      const [iso, tape] = line.split('=').map(x => x.trim());
+      if (/^[0-9a-fA-F]{2}$/.test(iso) && /^[0-9a-fA-F]{2}$/.test(tape)) {
+        map[parseInt(iso, 16)] = parseInt(tape, 16);
+      }
+    });
+    return map;
+  }
+
+  document.getElementById('translateBtn').onclick = function () {
+    const fileInput = document.getElementById('isoFile');
+    const hexMapStr = document.getElementById('hexMap').value;
+    const hexMap = parseHexMap(hexMapStr);
+    const outputDiv = document.getElementById('output');
+    outputDiv.textContent = '';
+    document.getElementById('downloadLink').classList.add('hidden');
+
+    if (!fileInput.files.length) {
+      outputDiv.textContent = 'Please select an ISO file.';
+      return;
     }
 
-    document.getElementById('translateBtn').onclick = function () {
-      const fileInput = document.getElementById('isoFile');
-      const hexMapStr = document.getElementById('hexMap').value;
-      const hexMap = parseHexMap(hexMapStr);
-      const outputDiv = document.getElementById('output');
-      outputDiv.textContent = '';
-      document.getElementById('downloadLink').classList.add('hidden');
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const isoBuffer = new Uint8Array(e.target.result);
+      const tapeHeader = new TextEncoder().encode('TAPE'); // 4 bytes
+      const tapeFooter = new TextEncoder().encode('END');  // 3 bytes
+      const tapeBuffer = new Uint8Array(tapeHeader.length + isoBuffer.length + tapeFooter.length);
 
-      if (!fileInput.files.length) {
-        outputDiv.textContent = 'Please select an ISO file.';
-        return;
+      // Write header
+      tapeBuffer.set(tapeHeader, 0);
+
+      // Write mapped data
+      for (let i = 0; i < isoBuffer.length; i++) {
+        let val = isoBuffer[i];
+        if (hexMap.hasOwnProperty(val)) {
+          tapeBuffer[tapeHeader.length + i] = hexMap[val];
+        } else {
+          tapeBuffer[tapeHeader.length + i] = val;
+        }
       }
 
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const isoBuffer = new Uint8Array(e.target.result);
-        const tapeBuffer = new Uint8Array(isoBuffer.length);
+      // Write footer
+      tapeBuffer.set(tapeFooter, tapeHeader.length + isoBuffer.length);
 
-        for (let i = 0; i < isoBuffer.length; i++) {
-          let val = isoBuffer[i];
-          if (hexMap.hasOwnProperty(val)) {
-            tapeBuffer[i] = hexMap[val];
-          } else {
-            tapeBuffer[i] = val; // If not mapped, keep original byte
-          }
-        }
+      // Show a short hex preview (include header)
+      let preview = 'First 64 bytes of translated tape file:\n';
+      preview += Array.from(tapeBuffer.slice(0, 64)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      outputDiv.textContent = preview;
 
-        // Show a short hex preview
-        let preview = 'First 64 bytes of translated tape file:\n';
-        preview += Array.from(tapeBuffer.slice(0, 64)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-        outputDiv.textContent = preview;
-
-        // Offer download
-        const blob = new Blob([tapeBuffer], {type: 'application/octet-stream'});
-        const dl = document.getElementById('downloadLink');
-        dl.href = URL.createObjectURL(blob);
-        dl.classList.remove('hidden');
-        dl.textContent = 'Download Tape File';
-      };
-      reader.readAsArrayBuffer(fileInput.files[0]);
+      // Offer download
+      const blob = new Blob([tapeBuffer], {type: 'application/octet-stream'});
+      const dl = document.getElementById('downloadLink');
+      dl.href = URL.createObjectURL(blob);
+      dl.classList.remove('hidden');
+      dl.textContent = 'Download Tape File';
+      dl.download = 'tape.tape';
     };
-  </script>
+    reader.readAsArrayBuffer(fileInput.files[0]);
+  };
+</script>
 </body>
 </html>
